@@ -19,3 +19,9 @@ Thumbs.db
 
 # Local Vite SSL certs
 .cert/
+
+# Windsurf deployment config
+windsurf_deployment.yaml
+
+# Local Netlify folder
+.netlify

@@ -2,31 +2,36 @@ import { fetch } from 'undici';
 import { extract } from '@extractus/article-extractor';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+const GEMINI_API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent';
 
-export default async function handler(req, res) {
+export default async (request, context) => {
   if (!GEMINI_API_KEY) {
     console.error('GEMINI_API_KEY is not set.');
-    return res.status(500).json({ error: 'Server configuration error: API key missing.' });
+    return Response.json({ error: 'Server configuration error: API key missing.' }, { status: 500 });
   }
 
   const GEMINI_API_URL = `${GEMINI_API_URL_BASE}?key=${GEMINI_API_KEY}`;
 
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST']);
-    return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
+  if (request.method !== 'POST') {
+    return Response.json({ error: `Method ${request.method} Not Allowed` }, { status: 405, headers: { 'Allow': 'POST' } });
   }
 
-  const { url } = req.body;
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return Response.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+  }
+  const { url } = body;
 
   if (!url) {
-    return res.status(400).json({ error: 'URL is required' });
+    return Response.json({ error: 'URL is required' }, { status: 400 });
   }
 
   try {
     new URL(url); 
   } catch (e) {
-    return res.status(400).json({ error: 'Invalid URL format' });
+    return Response.json({ error: 'Invalid URL format' }, { status: 400 });
   }
 
   try {
@@ -51,10 +56,10 @@ export default async function handler(req, res) {
       articleHtml = await response.text();
     } catch (fetchError) {
       if (fetchError.name === 'TimeoutError') {
-        return res.status(408).json({ error: 'Request timed out while fetching the URL (5s limit).' });
+        return Response.json({ error: 'Request timed out while fetching the URL (5s limit).' }, { status: 408 });
       }
       console.error('Error fetching URL:', fetchError.message);
-      return res.status(500).json({ error: `Failed to fetch content from URL: ${fetchError.message}` });
+      return Response.json({ error: `Failed to fetch content from URL: ${fetchError.message}` }, { status: 500 });
     }
 
     let extractedContent;
@@ -72,12 +77,12 @@ export default async function handler(req, res) {
                                    .trim();
         extractedContent = plainText;
         if (!extractedContent) {
-             return res.status(500).json({ error: 'Could not extract readable content. The page might be empty or non-textual.' });
+             return Response.json({ error: 'Could not extract readable content. The page might be empty or non-textual.' }, { status: 500 });
         }
       }
     } catch (extractionError) {
       console.error('Error extracting content:', extractionError);
-      return res.status(500).json({ error: 'Failed to process content from the page after fetching.' });
+      return Response.json({ error: 'Failed to process content from the page after fetching.' }, { status: 500 });
     }
     
     const textForGemini = extractedContent.substring(0, 8000);
@@ -123,16 +128,16 @@ export default async function handler(req, res) {
         console.error('Gemini API Error:', geminiRes.status, JSON.stringify(geminiResponseData, null, 2));
         const errorMessage = geminiResponseData?.error?.message || `Gemini API request failed with status ${geminiRes.status}.`;
         if (geminiRes.status === 429) {
-             return res.status(503).json({ error: `Gemini API quota exceeded or rate limited. Details: ${errorMessage}` });
+             return Response.json({ error: `Gemini API quota exceeded or rate limited. Details: ${errorMessage}` }, { status: 503 });
         }
-        return res.status(500).json({ error: `Gemini API error: ${errorMessage}` });
+        return Response.json({ error: `Gemini API error: ${errorMessage}` }, { status: 500 });
       }
     } catch (apiError) {
        if (apiError.name === 'TimeoutError') {
-        return res.status(504).json({ error: 'Gemini API request timed out (20s limit).' });
+        return Response.json({ error: 'Gemini API request timed out (20s limit).' }, { status: 504 });
       }
       console.error('Gemini API request failed:', apiError);
-      return res.status(500).json({ error: 'Failed to communicate with Gemini API.' });
+      return Response.json({ error: 'Failed to communicate with Gemini API.' }, { status: 500 });
     }
 
     const summaryText = geminiResponseData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
@@ -142,16 +147,16 @@ export default async function handler(req, res) {
       const blockReason = geminiResponseData?.promptFeedback?.blockReason;
       if (blockReason) {
         console.warn('Gemini content blocked:', blockReason, JSON.stringify(geminiResponseData.promptFeedback, null, 2));
-        return res.status(400).json({ error: `Summary generation blocked due to: ${blockReason}. The content might violate safety policies.` });
+        return Response.json({ error: `Summary generation blocked due to: ${blockReason}. The content might violate safety policies.` }, { status: 400 });
       }
       console.error('Gemini response did not contain summary text:', JSON.stringify(geminiResponseData, null, 2));
-      return res.status(500).json({ error: 'Failed to get a valid summary from Gemini. Response was empty or malformed.' });
+      return Response.json({ error: 'Failed to get a valid summary from Gemini. Response was empty or malformed.' }, { status: 500 });
     }
 
-    return res.status(200).json({ summary: summaryText });
+    return Response.json({ summary: summaryText }, { status: 200 });
 
   } catch (error) {
     console.error('Unhandled error in /api/summary:', error.message, error.stack);
-    return res.status(500).json({ error: 'An unexpected server error occurred. Please try again later.' });
+    return Response.json({ error: 'An unexpected server error occurred. Please try again later.' }, { status: 500 });
   }
 }
