@@ -1,0 +1,21 @@
+# Dependencies
+/node_modules
+
+# Build output
+/dist
+/.vite
+
+# Environment variables
+.env
+.env.*
+!/.env.example
+
+# IDE / OS specific
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Local Vite SSL certs
+.cert/
